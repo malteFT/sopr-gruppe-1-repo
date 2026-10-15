@@ -1,0 +1,36 @@
+<resources>
+    <string name="app_name">Loksteuerung 80 012</string>
+    <string name="subtitle">WebSocket-Steuerung für Modellloks (ISE-Gartenbahn)</string>
+
+    <string name="default_url">ws://10.195.24.142:8075/locomotive</string>
+    <string name="url_hint">WebSocket-URL</string>
+    <string name="connect">Verbinden</string>
+    <string name="disconnect">Trennen</string>
+    <string name="status_disconnected">Nicht verbunden</string>
+    <string name="status_connecting">Verbinde …</string>
+    <string name="status_waiting">Verbunden – warte auf ersten Zustand …</string>
+    <string name="status_connected">Verbunden: %1$s</string>
+    <string name="id_none">ID: –</string>
+    <string name="id_value">ID: %1$s</string>
+    <string name="info_none">Name/Nummer/Position: –</string>
+    <string name="info_value">Name: %1$s · Nummer: %2$s · Position: %3$d</string>
+
+    <string name="heading_connection">Verbindung</string>
+    <string name="heading_controls">Steuerung</string>
+    <string name="heading_emergency">Notfall</string>
+    <string name="heading_log">Protokoll</string>
+
+    <string name="freigabe">Fahren freigeben</string>
+    <string name="speed_zero">Geschwindigkeit: 0</string>
+    <string name="speed_value">Geschwindigkeit: %1$d</string>
+    <string name="direction_forward">◀ Vorwärts</string>
+    <string name="direction_backward">Rückwärts ▶</string>
+    <string name="headlight">Fahrlicht</string>
+    <string name="cabin_light">Kabinenlicht</string>
+    <string name="horn">Hupe</string>
+    <string name="driving_sound">Fahrgeräusch</string>
+    <string name="smoking">Rauch</string>
+    <string name="note_controls">Ausgegraute Schalter = Feld ist bei dieser Lok null (Hardware nicht vorhanden). Richtung ist nur bei Stillstand änderbar.</string>
+    <string name="stop">STOP – Geschwindigkeit auf 0</string>
+    <string name="note_safety">Achtung: Es bewegt sich echte Hardware. Erst Fahrlicht testen, Fahren nur kontrolliert.</string>
+</resources>
