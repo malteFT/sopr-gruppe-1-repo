@@ -45,9 +45,18 @@ class NfcConnectionTest {
 
     @After fun cleanup() { scenario.close(); server.shutdown() }
 
-    private fun scan(texts: List<String>) {
+    private fun scan(texts: List<String>, targetName: String = "gisela") {
         scenario.onActivity { activity ->
-            activity.handleNfcTexts(texts) { name -> if (name == "gisela") url else null }
+            activity.handleNfcTexts(texts) { actualUrl ->
+                val expectedUrl = when (targetName) {
+                    "gisela" -> "ws://10.195.24.105:8076/locomotive"
+                    "80 012" -> "ws://10.195.24.142:8075/locomotive"
+                    "blauwal" -> "ws://10.195.24.112:8075/locomotive"
+                    else -> error("Unexpected test locomotive")
+                }
+                assertEquals(expectedUrl, actualUrl)
+                url // Only the connection transport is redirected to the local test server.
+            }
         }
     }
 
@@ -87,6 +96,52 @@ class NfcConnectionTest {
         assertEquals(11, light.length())
         scenario.onActivity { it.findViewById<Button>(R.id.stopButton).performClick() }
         assertEquals(0, JSONObject(messages.poll(5, TimeUnit.SECONDS) ?: error("No stop command")).getInt("speed"))
+    }
+
+    @Test fun locomotiveNumberSelectsItsStateAndAvailableFunctions() {
+        val payload = byteArrayOf(2) + "de".toByteArray() + "80  012".toByteArray()
+        scan(listOf(NfcText.decode(payload)!!), "80 012")
+        assertNotNull(server.takeRequest(5, TimeUnit.SECONDS))
+        assertTrue(opened.await(5, TimeUnit.SECONDS))
+        val numberedState = JSONObject(state).put("id", "80-012-live-id")
+            .put("name", "ISE").put("number", "80 012")
+            .put("hornSound", JSONObject.NULL).put("drivingSound", JSONObject.NULL)
+            .put("smoking", false)
+        serverSocket!!.send(numberedState.toString())
+        waitForReady()
+        scenario.onActivity {
+            assertTrue(it.findViewById<TextView>(R.id.infoText).text.contains("80 012"))
+            assertFalse(it.findViewById<MaterialSwitch>(R.id.hornSwitch).isEnabled)
+            assertTrue(it.findViewById<MaterialSwitch>(R.id.smokingSwitch).isEnabled)
+            it.findViewById<MaterialSwitch>(R.id.headLightSwitch).isChecked = true
+        }
+        val command = JSONObject(messages.poll(5, TimeUnit.SECONDS) ?: error("No command"))
+        assertEquals("80-012-live-id", command.getString("id"))
+        assertEquals("80 012", command.getString("number"))
+        assertTrue(command.isNull("hornSound"))
+    }
+
+    @Test fun blauwalTextUsesItsOwnLiveId() {
+        val payload = byteArrayOf(2) + "de".toByteArray() + "Blauwal".toByteArray()
+        scan(listOf(NfcText.decode(payload)!!), "blauwal")
+        assertNotNull(server.takeRequest(5, TimeUnit.SECONDS))
+        assertTrue(opened.await(5, TimeUnit.SECONDS))
+        val blauwalState = JSONObject(state).put("id", "blauwal-live-id")
+            .put("name", "Blauwaal").put("number", "Testlok")
+        serverSocket!!.send(blauwalState.toString())
+        waitForReady()
+        scenario.onActivity {
+            assertTrue(it.findViewById<TextView>(R.id.statusText).text.contains("Blauwaal"))
+            assertFalse(it.findViewById<MaterialSwitch>(R.id.freigabeSwitch).isChecked)
+            it.findViewById<Button>(R.id.stopButton).performClick()
+        }
+        val command = JSONObject(messages.poll(5, TimeUnit.SECONDS) ?: error("No command"))
+        assertEquals("blauwal-live-id", command.getString("id"))
+        assertEquals("Blauwaal", command.getString("name"))
+        assertEquals(0, command.getInt("speed"))
+        scan(listOf("Blauwaal"), "blauwal")
+        assertNull(server.takeRequest(300, TimeUnit.MILLISECONDS))
+        scenario.onActivity { assertTrue(it.findViewById<TextView>(R.id.statusText).text.contains("Blauwaal")) }
     }
 
     @Test fun unknownEmptyAndConflictingTextsCannotConnect() {

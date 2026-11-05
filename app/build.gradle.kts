@@ -12,8 +12,8 @@ android {
         applicationId = "de.dssax.loksteuerung"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1-nfc"
+        versionCode = 3
+        versionName = "1.2-nfc"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

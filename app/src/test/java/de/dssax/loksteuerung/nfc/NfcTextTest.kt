@@ -17,6 +17,14 @@ class NfcTextTest {
         assertEquals("Giséla", NfcText.decode(utf8("  Giséla\n")))
         assertEquals("gisela", NfcText.key(" GISELA "))
     }
+    @Test fun normalizesLocomotiveNumberWithDifferentSpaces() {
+        assertEquals("80 012", NfcText.key(" 80  012 "))
+        assertEquals("80 012", NfcText.key("80\t012"))
+        assertEquals("80 012", NfcText.key("80\u00A0012"))
+    }
+    @Test fun ignoresUtf8ByteOrderMark() {
+        assertEquals("gisela", NfcText.decode(utf8("\uFEFFgisela")))
+    }
     @Test fun rejectsEmptyAndTruncatedPayloads() {
         assertNull(NfcText.decode(byteArrayOf()))
         assertNull(NfcText.decode(byteArrayOf(10, 65)))

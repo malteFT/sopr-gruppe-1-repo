@@ -33,15 +33,16 @@
     <string name="note_controls">Ausgegraute Schalter = Feld ist bei dieser Lok null (Hardware nicht vorhanden). Richtung ist nur bei Stillstand änderbar.</string>
     <string name="stop">STOP – Geschwindigkeit auf 0</string>
     <string name="note_safety">Achtung: Es bewegt sich echte Hardware. Erst Fahrlicht testen, Fahren nur kontrolliert.</string>
+    <string name="blauwal_url">ws://10.195.24.112:8075/locomotive</string>
     <string name="gisela_url">ws://10.195.24.105:8076/locomotive</string>
-    <string name="nfc_hint">NFC: Rückseite des Handys an den Lok-Tag halten. Der Text „gisela“ verbindet Gisela automatisch.</string>
+    <string name="nfc_hint">NFC: Rückseite des Handys an den Lok-Tag halten. Unterstützte Lok-Texte: Gisela, 80 012 und Blauwal.</string>
     <string name="nfc_ready">NFC bereit – Lok-Tag scannen.</string>
     <string name="nfc_disabled">NFC ist ausgeschaltet. Bitte in den Einstellungen einschalten.</string>
     <string name="nfc_unavailable">Dieses Gerät hat keinen NFC-Leser. Die manuelle URL-Eingabe ist möglich.</string>
     <string name="nfc_settings">NFC-Einstellungen</string>
     <string name="nfc_read_error">Tag konnte nicht gelesen werden. Handy erneut an den Tag halten.</string>
-    <string name="nfc_no_text">Kein NDEF-Text gefunden. Der Tag muss den Text „gisela“ enthalten.</string>
-    <string name="nfc_unknown">Unbekannter Lok-Text: %1$s. Unterstützt: gisela, 80 012, ISE.</string>
+    <string name="nfc_no_text">Kein NDEF-Text gefunden. Der Tag muss einen Lok-Text enthalten: Gisela, 80 012 oder Blauwal.</string>
+    <string name="nfc_unknown">Unbekannter Lok-Text: %1$s. Unterstützt: Gisela, 80 012 und Blauwal (auch Blauwaal).</string>
     <string name="nfc_ambiguous">Der Tag enthält mehrere unterschiedliche Lok-Texte. Bitte nur einen Loknamen speichern.</string>
     <string name="nfc_selected">NFC: %1$s → %2$s</string>
 </resources>

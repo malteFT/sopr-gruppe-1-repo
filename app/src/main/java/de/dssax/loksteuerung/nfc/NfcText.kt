@@ -23,5 +23,7 @@ object NfcText {
         }.getOrNull()
     }
 
-    fun key(text: String): String = text.trim().lowercase(Locale.ROOT)
+    private val whitespace = Regex("[\\s\\p{Zs}]+")
+
+    fun key(text: String): String = text.replace(whitespace, " ").trim().lowercase(Locale.ROOT)
 }

@@ -1,6 +1,6 @@
 # Loksteuerung mit NFC
 
-Dieser Branch erweitert die vollständige Loksteuerung aus **android-app** im **ise-server**: Der gespeicherte NDEF-Text **gisela** öffnet automatisch die passende WebSocket-Verbindung. Die unbekannte Tag-Seriennummer/UID wird nicht benötigt; eine Tag-ID-Zuordnung ist nicht erforderlich.
+Dieser Branch erweitert die vollständige Loksteuerung aus **android-app** im **ise-server**: Die NDEF-Texte **Gisela**, **80 012** und **Blauwal** öffnen automatisch die WebSocket-Verbindung der jeweiligen Lok. Die unbekannte Tag-Seriennummer/UID wird nicht benötigt; eine Tag-ID-Zuordnung ist nicht erforderlich.
 
 ## Auf dem anderen Laptop installieren
 
@@ -9,25 +9,28 @@ Dieser Branch erweitert die vollständige Loksteuerung aus **android-app** im **
 3. Am Pixel 9a in **Über das Telefon** siebenmal auf **Build-Nummer** tippen und in den Entwickleroptionen **USB-Debugging** einschalten. Mit einem USB-Datenkabel verbinden und den Dialog am Handy bestätigen. Unter Windows gegebenenfalls den Google-USB-Treiber über den SDK Manager installieren.
 4. In Android Studio das Modul **app** und das Pixel wählen, dann **Run ▶** drücken. Die App heißt **Loksteuerung NFC**.
 
+**Vorhandenes Projekt aktualisieren:** Im Branch **feature/android-nfc-gisela** in Android Studio **Git → Pull**, anschließend **Sync Project with Gradle Files** und **Run ▶**.
+
 Alternativ den Branch in GitLab auswählen, **Code → Download source code → ZIP**, entpacken und in Android Studio öffnen. Unterstützt Android 8.0/API 26 und höher. `local.properties` wird auf jedem Laptop lokal erzeugt.
 
 Bauen: `./gradlew :app:assembleDebug` (macOS/Linux) bzw. `.\gradlew.bat :app:assembleDebug` (Windows/PowerShell). APK: `app/build/outputs/apk/debug/app-debug.apk`.
 
-## Gisela ohne URL-Eingabe verbinden
+## Drei Loks ohne URL-Eingabe verbinden
 
 1. Handy mit dem Netz der Gartenbahn verbinden, NFC einschalten und die App im Vordergrund geöffnet lassen.
 2. Die Rückseite des entsperrten Pixel an den **ISO14443-3A / NFC-A**-Tag halten.
-3. Die App liest **gisela**, setzt **ws://10.195.24.105:8076/locomotive** und verbindet automatisch.
+3. Die App liest den Lok-Text und verbindet automatisch mit der zugehörigen Adresse aus der Tabelle.
 4. Den vom Server geladenen Loknamen prüfen. Zum Fahren wie bisher **Fahren freigeben** einschalten. Ein Scan selbst sendet keinen Fahrbefehl an die neu ausgewählte Lok.
 
-In NFC Tools muss ein **Text-Datensatz** mit `gisela` auf dem Tag stehen. Groß-/Kleinschreibung und äußere Leerzeichen werden ignoriert. Die App liest UTF-8- und UTF-16-Text-Datensätze mit ihrer Sprachkennung. Sie beschreibt den Tag nicht.
+In NFC Tools muss ein **Text-Datensatz** mit **Gisela**, **80 012** (Leerzeichen zwischen 80 und 012) oder **Blauwal** auf dem jeweiligen Lok-Tag stehen. Groß-/Kleinschreibung und äußere Leerzeichen werden ignoriert. Mehrere Leerzeichen, Tabulatoren und geschützte Leerzeichen zwischen `80` und `012` werden ebenfalls erkannt. Die App liest UTF-8- und UTF-16-Text-Datensätze mit ihrer Sprachkennung. Sie beschreibt den Tag nicht.
 
-| Text auf dem Tag | WebSocket-Adresse |
-|---|---|
-| gisela | ws://10.195.24.105:8076/locomotive |
-| 80 012 oder ISE | ws://10.195.24.142:8075/locomotive |
+| Text auf dem Tag | Lok / Registry-Name | WebSocket-Adresse |
+|---|---|---|
+| Gisela | Gisela | ws://10.195.24.105:8076/locomotive |
+| 80 012 (auch ISE) | 80 012; Gerätename ISE | ws://10.195.24.142:8075/locomotive |
+| Blauwal (auch Blauwaal) | Blauwaal | ws://10.195.24.112:8075/locomotive |
 
-Die Adressen stammen aus **doku/gartenbahn-ise**, [04-geraete.md](https://gitlab.dd.dhsn.de/3wi25-1/gruppe-1/server/-/blob/doku/gartenbahn-ise/04-geraete.md), Stand 15.10.2026. Die Zuordnung steht in `MainActivity.nfcUrlForName`, die Adressen in `app/src/main/res/values/strings.xml` (`gisela_url`, `default_url`). Bei geänderter IP/Port diese Ressourcen anpassen oder die bestehende manuelle Eingabe verwenden. Der Scan benötigt keinen Registry-Server.
+Die Adressen von Gisela und 80 012 stammen aus **doku/gartenbahn-ise**, [04-geraete.md](https://gitlab.dd.dhsn.de/3wi25-1/gruppe-1/server/-/blob/doku/gartenbahn-ise/04-geraete.md), Stand 15.10.2026. **Blauwaal** wurde am 05.11.2026 vom Nutzer aus der Live-Liste des RRS gemeldet. Der Tag-Text **Blauwal** und der Registry-Name **Blauwaal** werden beide akzeptiert. Gisela wurde vom Nutzer bereits erfolgreich per Pixel-Scan verbunden. Die Zuordnung steht in `MainActivity.nfcUrlForName`, die Adressen in `app/src/main/res/values/strings.xml` (`gisela_url`, `default_url`, `blauwal_url`). Bei geänderter IP/Port diese Ressourcen anpassen oder die bestehende manuelle Eingabe verwenden. Der Scan benötigt keinen Registry-Server.
 
 Leere, unbekannte oder mehrdeutige Texte lösen keine neue Verbindung aus; die aktuelle Verbindung bleibt bestehen. Derselbe Lok-Tag trennt eine bereits bestehende Verbindung nicht. Beim Wechsel zu einer anderen Lok werden ausstehende Sendetimer gelöscht, gegebenenfalls ein Stopp an die bisherige Lok gesendet und die Fahrfreigabe zurückgesetzt. Verspätete Zustandsnachrichten der alten Verbindung werden ignoriert. Bei Netzwerkausfall kann der Empfang eines Stoppbefehls nicht garantiert werden.
 
@@ -54,11 +57,11 @@ Die `id` wird bei jedem Serverstart neu erzeugt. Sie wird weiterhin vom verbunde
 
 Build/Unit-Tests: `./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug`. Mit laufendem Testemulator/Testgerät: `./gradlew :app:connectedDebugAndroidTest`.
 
-Unit-Tests prüfen UTF-8/UTF-16-NDEF-Text, Sprachkennung, Normalisierung und ungültige Nutzdaten. Android-Tests speisen einen gelesenen Text in den Scan-Ablauf ein und prüfen gegen einen lokalen WebSocket-Testserver automatische Verbindung, Freigabe erst nach Empfang des Zustands, vollständige JSON-Nachrichten sowie Licht/STOP, unbekannte/mehrdeutige Tags und wiederholte Scans. Die Tests kontaktieren keine echte Lok.
+Unit-Tests prüfen UTF-8/UTF-16-NDEF-Text, Sprachkennung, Normalisierung und ungültige Nutzdaten. Android-Tests speisen einen gelesenen Text in den Scan-Ablauf ein und prüfen gegen einen lokalen WebSocket-Testserver die tatsächliche Adresszuordnung aller drei Loks, automatische Verbindung, Freigabe erst nach Empfang des Zustands, vollständige JSON-Nachrichten sowie Licht/STOP, unbekannte/mehrdeutige Tags und wiederholte Scans. Die Tests kontaktieren keine echte Lok.
 
-Der physische NFC-Scan und die tatsächliche Steuerung müssen am Pixel und an der Anlage geprüft werden: `gisela` scannen, angezeigte Lok prüfen, Fahrlicht testen, dann kontrolliert niedrige Geschwindigkeit und STOP testen.
+Am Pixel vor Ort jeden der drei Tags scannen und den angezeigten Loknamen bzw. die Nummer prüfen. Nach jedem Lokwechsel ist die Fahrfreigabe erneut nötig. Fahrlicht testen, dann kontrolliert niedrige Geschwindigkeit und STOP testen. Die aktuellen Geräte-IDs und verfügbaren Funktionen werden immer vom jeweiligen Lokserver geladen.
 
-Geprüft am 05.11.2026: Debug-APK gebaut, fünf Unit-Tests und drei Android-Tests erfolgreich. Die Android-Tests liefen auf Android 16/API 36.1. Android Lint meldet keine Fehler und sieben Warnungen. Physischer NFC-Scan und echte Fahrt wurden hier nicht durchgeführt.
+Geprüft am 05.11.2026: Debug-APK (Version 1.2-nfc) gebaut, sieben Unit-Tests und fünf Android-Tests erfolgreich. Die Android-Tests liefen auf Android 16/API 36.1. Android Lint meldet keine Fehler und sieben Warnungen. Physischer NFC-Scan und echte Fahrt wurden hier nicht durchgeführt.
 
 ## Projektquellen
 

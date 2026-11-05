@@ -223,19 +223,20 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
     }
 
     @VisibleForTesting
-    internal fun handleNfcTexts(texts: List<String>, resolveUrl: (String) -> String? = ::nfcUrlForName) {
+    internal fun handleNfcTexts(texts: List<String>, connectionUrl: (String) -> String = { it }) {
         val names = texts.map(NfcText::key).filter { it.isNotEmpty() }.distinct()
         if (names.size != 1) {
             binding.nfcStatusText.setText(if (names.isEmpty()) R.string.nfc_no_text else R.string.nfc_ambiguous)
             return
         }
         val name = names.single()
-        val url = resolveUrl(name)
-        if (url == null) {
+        val targetUrl = nfcUrlForName(name)
+        if (targetUrl == null) {
             binding.nfcStatusText.text = getString(R.string.nfc_unknown, name)
             log(getString(R.string.nfc_unknown, name))
             return
         }
+        val url = connectionUrl(targetUrl)
         val now = SystemClock.elapsedRealtime()
         if (name == lastNfcText && now - lastNfcAt < 2000) return
         lastNfcText = name
@@ -250,6 +251,7 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
 
     private fun nfcUrlForName(name: String): String? = when (name) {
         "gisela" -> getString(R.string.gisela_url)
+        "blauwal", "blauwaal" -> getString(R.string.blauwal_url)
         "80 012", "ise" -> getString(R.string.default_url)
         else -> null
     }
