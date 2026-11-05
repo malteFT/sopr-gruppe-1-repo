@@ -1,61 +1,66 @@
-# Loksteuerung (Android-App)
+# Loksteuerung mit NFC
 
-Kleine Android-App zur Steuerung der Modelllok **80 012** (Gerätename „ISE") über den
-WebSocket-Endpunkt `ws://10.195.24.142:8075/locomotive`.
+Dieser Branch erweitert die vollständige Loksteuerung aus **android-app** im **ise-server**: Der gespeicherte NDEF-Text **gisela** öffnet automatisch die passende WebSocket-Verbindung. Die unbekannte Tag-Seriennummer/UID wird nicht benötigt; eine Tag-ID-Zuordnung ist nicht erforderlich.
 
-## Funktionen
+## Auf dem anderen Laptop installieren
 
-- Verbinden per WebSocket (URL im Feld anpassbar, Standard: 80 012)
-- Zustand lesen (wird beim Verbinden automatisch vom Server gesendet)
-- Read-Modify-Write: es wird immer der komplette, zuletzt empfangene Zustand
-  zurückgesendet – nur geänderte Felder werden vorher angepasst
-- Geschwindigkeit (0–255, Slider), Richtung (vorwärts/rückwärts)
-- Schalter für Fahrlicht, Kabinenlicht, Hupe, Fahrgeräusch, Rauch
-  (Felder mit `null` = Hardware nicht vorhanden → ausgegraut)
-- NOT-STOP-Button (setzt Geschwindigkeit sofort auf 0)
-- Sicherheits-Freigabe: Fahrbefehle nur, wenn „Fahren freigeben" aktiv ist
-- Protokollfenster mit allen gesendeten/empfangenen JSON-Nachrichten
+1. In Android Studio **Get from Version Control / Clone Repository**: `https://gitlab.dd.dhsn.de/3wi25-1/gruppe-1/server.git` klonen und **feature/android-nfc-gisela** auschecken. Mit dem eigenen GitLab-Zugang anmelden; Zugangsdaten nicht in die URL schreiben.
+2. Projektordner mit `settings.gradle.kts` öffnen und Gradle synchronisieren. Die App liegt direkt im Stamm dieses Branches. SDK 34 und Build Tools 34.0.0 bei Bedarf installieren; als Gradle JDK 21 oder 17 wählen. Gradle Wrapper 8.11.1, Android Gradle Plugin 8.7.3 und Kotlin 2.1.10 sind eingerichtet.
+3. Am Pixel 9a in **Über das Telefon** siebenmal auf **Build-Nummer** tippen und in den Entwickleroptionen **USB-Debugging** einschalten. Mit einem USB-Datenkabel verbinden und den Dialog am Handy bestätigen. Unter Windows gegebenenfalls den Google-USB-Treiber über den SDK Manager installieren.
+4. In Android Studio das Modul **app** und das Pixel wählen, dann **Run ▶** drücken. Die App heißt **Loksteuerung NFC**.
 
-## Protokoll-Hinweise (aus der Doku des Server-Repos)
+Alternativ den Branch in GitLab auswählen, **Code → Download source code → ZIP**, entpacken und in Android Studio öffnen. Unterstützt Android 8.0/API 26 und höher. `local.properties` wird auf jedem Laptop lokal erzeugt.
 
-- JSON-Felder: `id`, `speed`, `direction` (0=vor, 1=rück), `number`, `name`,
-  `headLight`, `cabineLighting`, `hornSound`, `drivingSound`, `smoking`, `position`
-- `id` wird bei Serverstart neu erzeugt → immer live lesen, nie fest verdrahten
-- Nachricht ohne passende `id` wird ignoriert; unbekannte Felder = Fehler (strikt)
-- Server-Debounce 300 ms, max. 100 Nachrichten/60 s pro Client-IP → App drosselt selbst
-- Änderungen werden per Broadcast an alle Clients gesendet
+Bauen: `./gradlew :app:assembleDebug` (macOS/Linux) bzw. `.\gradlew.bat :app:assembleDebug` (Windows/PowerShell). APK: `app/build/outputs/apk/debug/app-debug.apk`.
 
-## Bauen und Starten
+## Gisela ohne URL-Eingabe verbinden
 
-- **Android Studio:** Ordner `~/StudioProjects/loksteuerung` öffnen, Gradle-Sync
-  abwarten, dann auf Gerät/Emulator starten
-- **Kommandozeile:** `./gradlew :app:assembleDebug`
-  → APK unter `app/build/outputs/apk/debug/app-debug.apk` (`adb install …`)
+1. Handy mit dem Netz der Gartenbahn verbinden, NFC einschalten und die App im Vordergrund geöffnet lassen.
+2. Die Rückseite des entsperrten Pixel an den **ISO14443-3A / NFC-A**-Tag halten.
+3. Die App liest **gisela**, setzt **ws://10.195.24.105:8076/locomotive** und verbindet automatisch.
+4. Den vom Server geladenen Loknamen prüfen. Zum Fahren wie bisher **Fahren freigeben** einschalten. Ein Scan selbst sendet keinen Fahrbefehl an die neu ausgewählte Lok.
 
-Das Handy/der Emulator muss im selben Netz wie die Anlage sein (`10.195.24.0/24`).
+In NFC Tools muss ein **Text-Datensatz** mit `gisela` auf dem Tag stehen. Groß-/Kleinschreibung und äußere Leerzeichen werden ignoriert. Die App liest UTF-8- und UTF-16-Text-Datensätze mit ihrer Sprachkennung. Sie beschreibt den Tag nicht.
 
-## Git / GitLab
+| Text auf dem Tag | WebSocket-Adresse |
+|---|---|
+| gisela | ws://10.195.24.105:8076/locomotive |
+| 80 012 oder ISE | ws://10.195.24.142:8075/locomotive |
 
-Dieses Projekt liegt als Branch **`android-app`** im Server-Repo
-(`https://gitlab.dd.dhsn.de/3wi25-1/gruppe-1/server`). Der Branch hat keine
-gemeinsame Historie mit `main` – der Ordner hier ist ein Git-Worktree dieses Branches.
+Die Adressen stammen aus **doku/gartenbahn-ise**, [04-geraete.md](https://gitlab.dd.dhsn.de/3wi25-1/gruppe-1/server/-/blob/doku/gartenbahn-ise/04-geraete.md), Stand 15.10.2026. Die Zuordnung steht in `MainActivity.nfcUrlForName`, die Adressen in `app/src/main/res/values/strings.xml` (`gisela_url`, `default_url`). Bei geänderter IP/Port diese Ressourcen anpassen oder die bestehende manuelle Eingabe verwenden. Der Scan benötigt keinen Registry-Server.
 
-Push aus Android Studio: **Git → Push…**, Branch `android-app` wählen, als Passwort
-einen Personal Access Token (`write_repository`) verwenden – nie das Log-in-Passwort,
-nie den Token in Dateien speichern. Alternativ im Terminal:
+Leere, unbekannte oder mehrdeutige Texte lösen keine neue Verbindung aus; die aktuelle Verbindung bleibt bestehen. Derselbe Lok-Tag trennt eine bereits bestehende Verbindung nicht. Beim Wechsel zu einer anderen Lok werden ausstehende Sendetimer gelöscht, gegebenenfalls ein Stopp an die bisherige Lok gesendet und die Fahrfreigabe zurückgesetzt. Verspätete Zustandsnachrichten der alten Verbindung werden ignoriert. Bei Netzwerkausfall kann der Empfang eines Stoppbefehls nicht garantiert werden.
 
-```bash
-git push -u origin android-app
-```
+Ohne NFC bzw. bei ausgeschaltetem NFC erscheint ein Hinweis; die manuelle URL-Eingabe bleibt möglich.
 
-Branch woanders auschecken:
+## Vorhandene Steuerung
 
-```bash
-git fetch origin android-app
-git worktree add ../loksteuerung android-app   # oder: git switch android-app
-```
+- Zustand wird beim Verbinden automatisch vom Server gelesen.
+- Read-Modify-Write: kompletter zuletzt empfangener JSON-Zustand wird zurückgesendet; nur geänderte Felder werden angepasst.
+- Geschwindigkeit 0–255 per Slider, Richtung vorwärts/rückwärts.
+- Schalter für Fahrlicht, Kabinenlicht, Hupe, Fahrgeräusch und Rauch; nicht vorhandene Funktionen bleiben ausgegraut.
+- NOT-STOP setzt Geschwindigkeit auf 0.
+- Fahrbefehle benötigen die vorhandene Freigabe **Fahren freigeben**.
+- Protokollfenster zeigt gesendete und empfangene Nachrichten.
+- Drosselung der Nachrichten und Richtungsänderung nur bei Stillstand bleiben erhalten.
 
-## Sicherheit
+## Protokoll
 
-⚠️ Es hängen echte Loks auf echten Schienen. Erst gefahrlose Zustände testen
-(z. B. Fahrlicht), Fahren nur kontrolliert und in Sichtweite.
+JSON-Felder: `id`, `speed`, `direction` (0=vor, 1=rück), `number`, `name`, `headLight`, `cabineLighting`, `hornSound`, `drivingSound`, `smoking`, `position`.
+
+Die `id` wird bei jedem Serverstart neu erzeugt. Sie wird weiterhin vom verbundenen Lokserver übernommen und nicht vom NFC-Tag gelesen. Der Server ignoriert Nachrichten ohne passende `id` und akzeptiert keine unbekannten Felder. Debounce: 300 ms, maximal 100 Nachrichten/60 s pro Client-IP; die App drosselt selbst.
+
+## Prüfen
+
+Build/Unit-Tests: `./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug`. Mit laufendem Testemulator/Testgerät: `./gradlew :app:connectedDebugAndroidTest`.
+
+Unit-Tests prüfen UTF-8/UTF-16-NDEF-Text, Sprachkennung, Normalisierung und ungültige Nutzdaten. Android-Tests speisen einen gelesenen Text in den Scan-Ablauf ein und prüfen gegen einen lokalen WebSocket-Testserver automatische Verbindung, Freigabe erst nach Empfang des Zustands, vollständige JSON-Nachrichten sowie Licht/STOP, unbekannte/mehrdeutige Tags und wiederholte Scans. Die Tests kontaktieren keine echte Lok.
+
+Der physische NFC-Scan und die tatsächliche Steuerung müssen am Pixel und an der Anlage geprüft werden: `gisela` scannen, angezeigte Lok prüfen, Fahrlicht testen, dann kontrolliert niedrige Geschwindigkeit und STOP testen.
+
+Geprüft am 05.11.2026: Debug-APK gebaut, fünf Unit-Tests und drei Android-Tests erfolgreich. Die Android-Tests liefen auf Android 16/API 36.1. Android Lint meldet keine Fehler und sieben Warnungen. Physischer NFC-Scan und echte Fahrt wurden hier nicht durchgeführt.
+
+## Projektquellen
+
+- [Vorhandener Android-App-Branch](https://gitlab.dd.dhsn.de/3wi25-1/gruppe-1/server/-/tree/android-app)
+- [WebSocket-Protokolldokumentation](https://gitlab.dd.dhsn.de/3wi25-1/gruppe-1/server/-/blob/doku/gartenbahn-ise/03-websocket-protokolle.md)

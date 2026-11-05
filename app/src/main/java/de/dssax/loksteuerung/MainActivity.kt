@@ -1,6 +1,15 @@
 package de.dssax.loksteuerung
 
+import android.content.Intent
+import android.nfc.NdefRecord
+import android.nfc.NfcAdapter
+import android.nfc.Tag
+import android.nfc.tech.Ndef
 import android.os.Bundle
+import android.os.SystemClock
+import android.provider.Settings
+import androidx.annotation.VisibleForTesting
+import de.dssax.loksteuerung.nfc.NfcText
 import android.os.Handler
 import android.os.Looper
 import android.view.View
@@ -19,7 +28,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
 
     private lateinit var binding: ActivityMainBinding
 
@@ -29,6 +38,11 @@ class MainActivity : AppCompatActivity() {
 
     private var webSocket: WebSocket? = null
     private var state: JSONObject? = null
+    private var nfcAdapter: NfcAdapter? = null
+    private var readingNfc = false
+    private var connectedUrl: String? = null
+    private var lastNfcText: String? = null
+    private var lastNfcAt = 0L
     private var updatingUi = false
     private var lastSendAt = 0L
 
@@ -41,6 +55,7 @@ class MainActivity : AppCompatActivity() {
 
         override fun onOpen(webSocket: WebSocket, response: Response) {
             runOnUiThread {
+                if (this@MainActivity.webSocket !== webSocket) return@runOnUiThread
                 log("→ Verbunden")
                 binding.statusText.text = getString(R.string.status_waiting)
                 refreshControls()
@@ -48,7 +63,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
-            runOnUiThread { onServerMessage(text) }
+            runOnUiThread { if (this@MainActivity.webSocket === webSocket) onServerMessage(text) }
         }
 
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
@@ -73,6 +88,11 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         binding.urlEdit.setText(R.string.default_url)
+        nfcAdapter = NfcAdapter.getDefaultAdapter(this)
+        binding.nfcSettingsButton.isEnabled = nfcAdapter != null
+        binding.nfcSettingsButton.setOnClickListener {
+            startActivity(Intent(Settings.ACTION_NFC_SETTINGS))
+        }
 
         binding.speedSlider.apply {
             valueFrom = SPEED_MIN.toFloat()
@@ -149,11 +169,98 @@ class MainActivity : AppCompatActivity() {
         log("Bereit. Standard-URL: ${getString(R.string.default_url)}")
     }
 
+    override fun onResume() {
+        super.onResume()
+        val adapter = nfcAdapter
+        when {
+            adapter == null -> binding.nfcStatusText.setText(R.string.nfc_unavailable)
+            !adapter.isEnabled -> binding.nfcStatusText.setText(R.string.nfc_disabled)
+            else -> {
+                // Keep Android's NDEF check enabled: we need the stored text, not the tag UID.
+                try {
+                    adapter.enableReaderMode(this, this,
+                        NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_NFC_B or
+                            NfcAdapter.FLAG_READER_NFC_F or NfcAdapter.FLAG_READER_NFC_V, null)
+                    readingNfc = true
+                    binding.nfcStatusText.setText(R.string.nfc_ready)
+                } catch (_: IllegalStateException) {
+                    binding.nfcStatusText.setText(R.string.nfc_disabled)
+                }
+            }
+        }
+    }
+
+    override fun onPause() {
+        readingNfc = false
+        nfcAdapter?.disableReaderMode(this)
+        super.onPause()
+    }
+
+    override fun onTagDiscovered(tag: Tag) {
+        // ReaderCallback runs off the UI thread. Read and close the tag on that thread.
+        val result = runCatching {
+            val ndef = Ndef.get(tag) ?: return@runCatching emptyList<String>()
+            try {
+                val message = ndef.cachedNdefMessage ?: run {
+                    ndef.connect()
+                    ndef.ndefMessage
+                }
+                message?.records.orEmpty().mapNotNull { record ->
+                    if (record.tnf == NdefRecord.TNF_WELL_KNOWN && record.type.contentEquals(NdefRecord.RTD_TEXT))
+                        NfcText.decode(record.payload) else null
+                }
+            } finally {
+                runCatching { ndef.close() }
+            }
+        }
+        runOnUiThread {
+            if (!readingNfc) return@runOnUiThread
+            if (result.isFailure) {
+                binding.nfcStatusText.setText(R.string.nfc_read_error)
+                log(getString(R.string.nfc_read_error))
+            } else handleNfcTexts(result.getOrThrow())
+        }
+    }
+
+    @VisibleForTesting
+    internal fun handleNfcTexts(texts: List<String>, resolveUrl: (String) -> String? = ::nfcUrlForName) {
+        val names = texts.map(NfcText::key).filter { it.isNotEmpty() }.distinct()
+        if (names.size != 1) {
+            binding.nfcStatusText.setText(if (names.isEmpty()) R.string.nfc_no_text else R.string.nfc_ambiguous)
+            return
+        }
+        val name = names.single()
+        val url = resolveUrl(name)
+        if (url == null) {
+            binding.nfcStatusText.text = getString(R.string.nfc_unknown, name)
+            log(getString(R.string.nfc_unknown, name))
+            return
+        }
+        val now = SystemClock.elapsedRealtime()
+        if (name == lastNfcText && now - lastNfcAt < 2000) return
+        lastNfcText = name
+        lastNfcAt = now
+        binding.nfcStatusText.text = getString(R.string.nfc_selected, name, url)
+        if (connectedUrl == url && webSocket != null) return
+        disconnect()
+        binding.urlEdit.setText(url)
+        log("NFC-Text '$name' → $url")
+        connect()
+    }
+
+    private fun nfcUrlForName(name: String): String? = when (name) {
+        "gisela" -> getString(R.string.gisela_url)
+        "80 012", "ise" -> getString(R.string.default_url)
+        else -> null
+    }
+
     override fun onDestroy() {
         pendingSend?.let { uiHandler.removeCallbacks(it) }
         pendingSend = null
         webSocket?.cancel()
         webSocket = null
+        httpClient.dispatcher.executorService.shutdown()
+        httpClient.connectionPool.evictAll()
         super.onDestroy()
     }
 
@@ -183,19 +290,30 @@ class MainActivity : AppCompatActivity() {
         binding.statusText.text = getString(R.string.status_connecting)
         binding.connectButton.isEnabled = false
         log("→ Verbinde mit $url …")
+        connectedUrl = url
         webSocket = httpClient.newWebSocket(request, listener)
+        val connectingSocket = webSocket
         uiHandler.postDelayed({
-            binding.connectButton.isEnabled = true
-            refreshControls()
+            if (webSocket === connectingSocket) {
+                binding.connectButton.isEnabled = true
+                refreshControls()
+            }
         }, 1500L)
     }
 
     private fun disconnect() {
         pendingSend?.let { uiHandler.removeCallbacks(it) }
         pendingSend = null
+        // Cancel delayed commands and stop the old locomotive before a tag can select another.
+        state?.takeIf { it.optInt("speed", 0) > 0 }?.let {
+            it.put("speed", 0)
+            doSend()
+        }
         webSocket?.close(1000, "App getrennt")
         webSocket = null
         state = null
+        connectedUrl = null
+        binding.connectButton.isEnabled = true
         binding.freigabeSwitch.isChecked = false
         binding.statusText.text = getString(R.string.status_disconnected)
         log("→ Getrennt")
@@ -207,6 +325,10 @@ class MainActivity : AppCompatActivity() {
         if (webSocket === ws) {
             webSocket = null
             state = null
+            connectedUrl = null
+            pendingSend?.let { uiHandler.removeCallbacks(it) }
+            pendingSend = null
+            binding.connectButton.isEnabled = true
             binding.freigabeSwitch.isChecked = false
             binding.statusText.text = getString(R.string.status_disconnected)
         }
