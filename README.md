@@ -1,17 +1,17 @@
 # Loksteuerung mit NFC
 
-Dieser Branch erweitert die vollständige Loksteuerung aus **android-app** im **ise-server**: Die NDEF-Texte **Gisela**, **80 012** und **Blauwal** öffnen automatisch die WebSocket-Verbindung der jeweiligen Lok. Die unbekannte Tag-Seriennummer/UID wird nicht benötigt; eine Tag-ID-Zuordnung ist nicht erforderlich.
+Dieses eigenständige Repository enthält die Android-Loksteuerung mit NFC. Es wurde am 09.11.2026 aus dem Branch **feature/android-nfc-gisela** des ISE-Server-Repositories übernommen; die drei App-Commits einschließlich des Ausgangsstands **c01c82c** bleiben erhalten. Die NDEF-Texte **Gisela**, **80 012** und **Blauwal** öffnen automatisch die WebSocket-Verbindung der jeweiligen Lok. Die unbekannte Tag-Seriennummer/UID wird nicht benötigt; eine Tag-ID-Zuordnung ist nicht erforderlich.
 
 ## Auf dem anderen Laptop installieren
 
-1. In Android Studio **Get from Version Control / Clone Repository**: `https://gitlab.dd.dhsn.de/3wi25-1/gruppe-1/server.git` klonen und **feature/android-nfc-gisela** auschecken. Mit dem eigenen GitLab-Zugang anmelden; Zugangsdaten nicht in die URL schreiben.
-2. Projektordner mit `settings.gradle.kts` öffnen und Gradle synchronisieren. Die App liegt direkt im Stamm dieses Branches. SDK 34 und Build Tools 34.0.0 bei Bedarf installieren; als Gradle JDK 21 oder 17 wählen. Gradle Wrapper 8.11.1, Android Gradle Plugin 8.7.3 und Kotlin 2.1.10 sind eingerichtet.
+1. In Android Studio **Get from Version Control / Clone Repository**: `https://gitlab.dd.dhsn.de/s3005945/android-app.git` klonen. Der Standardbranch ist **main**. Mit dem eigenen GitLab-Zugang anmelden; Zugangsdaten nicht in die URL schreiben.
+2. Projektordner mit `settings.gradle.kts` öffnen und Gradle synchronisieren. Die App liegt direkt im Stamm dieses Repositories. SDK 34 und Build Tools 34.0.0 bei Bedarf installieren; als Gradle JDK 21 oder 17 wählen. Gradle Wrapper 8.11.1, Android Gradle Plugin 8.7.3 und Kotlin 2.1.10 sind eingerichtet.
 3. Am Pixel 9a in **Über das Telefon** siebenmal auf **Build-Nummer** tippen und in den Entwickleroptionen **USB-Debugging** einschalten. Mit einem USB-Datenkabel verbinden und den Dialog am Handy bestätigen. Unter Windows gegebenenfalls den Google-USB-Treiber über den SDK Manager installieren.
 4. In Android Studio das Modul **app** und das Pixel wählen, dann **Run ▶** drücken. Die App heißt **Loksteuerung NFC**.
 
-**Vorhandenes Projekt aktualisieren:** Im Branch **feature/android-nfc-gisela** in Android Studio **Git → Pull**, anschließend **Sync Project with Gradle Files** und **Run ▶**.
+**Vorhandenes Projekt aktualisieren:** Im Branch **main** in Android Studio **Git → Pull**, anschließend **Sync Project with Gradle Files** und **Run ▶**.
 
-Alternativ den Branch in GitLab auswählen, **Code → Download source code → ZIP**, entpacken und in Android Studio öffnen. Unterstützt Android 8.0/API 26 und höher. `local.properties` wird auf jedem Laptop lokal erzeugt.
+Alternativ im neuen Repository den Branch **main** auswählen, **Code → Download source code → ZIP**, entpacken und in Android Studio öffnen. Unterstützt Android 8.0/API 26 und höher. `local.properties` wird auf jedem Laptop lokal erzeugt.
 
 Bauen: `./gradlew :app:assembleDebug` (macOS/Linux) bzw. `.\gradlew.bat :app:assembleDebug` (Windows/PowerShell). APK: `app/build/outputs/apk/debug/app-debug.apk`.
 
@@ -65,5 +65,6 @@ Geprüft am 05.11.2026: Debug-APK (Version 1.2-nfc) gebaut, sieben Unit-Tests un
 
 ## Projektquellen
 
-- [Vorhandener Android-App-Branch](https://gitlab.dd.dhsn.de/3wi25-1/gruppe-1/server/-/tree/android-app)
+- [Ursprünglicher Android-App-Branch](https://gitlab.dd.dhsn.de/3wi25-1/gruppe-1/server/-/tree/android-app)
+- [Übernommener NFC-App-Stand](https://gitlab.dd.dhsn.de/3wi25-1/gruppe-1/server/-/tree/feature/android-nfc-gisela)
 - [WebSocket-Protokolldokumentation](https://gitlab.dd.dhsn.de/3wi25-1/gruppe-1/server/-/blob/doku/gartenbahn-ise/03-websocket-protokolle.md)
