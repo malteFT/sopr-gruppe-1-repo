@@ -1,5 +1,12 @@
 # Loksteuerung mit NFC
 
+## Lokale Case-Study-Varianten
+
+- `case/vorher`: direkte Umsetzung der Loksteuerung in `MainActivity`, ohne eigene Steuerungsfassade. Die vorhandene NFC-Textauswertung und Funktionsprüfungen bleiben enthalten.
+- `case/nachher`: gleiche Oberfläche und Funktion, mit `LokSteuerung` als Fassade sowie getrennten Komponenten für Lokzustand und WebSocket-Kommunikation.
+
+Beide Varianten beginnen beim App-Stand `54c1ec8`. Die gemeinsame Android-Testsuite prüft Tagzuordnung, vollständige Nachrichten, Geschwindigkeit, Stopp, Richtung und Zustandsrückmeldungen gegen einen lokalen WebSocket-Testserver. Die Branches sind lokale Arbeitsstände.
+
 Dieses eigenständige Repository enthält die Android-Loksteuerung mit NFC. Es wurde am 09.11.2026 aus dem Branch **feature/android-nfc-gisela** des ISE-Server-Repositories übernommen; die drei App-Commits einschließlich des Ausgangsstands **c01c82c** bleiben erhalten. Die NDEF-Texte **Gisela**, **80 012** und **Blauwal** öffnen automatisch die WebSocket-Verbindung der jeweiligen Lok. Die unbekannte Tag-Seriennummer/UID wird nicht benötigt; eine Tag-ID-Zuordnung ist nicht erforderlich.
 
 ## Auf dem anderen Laptop installieren

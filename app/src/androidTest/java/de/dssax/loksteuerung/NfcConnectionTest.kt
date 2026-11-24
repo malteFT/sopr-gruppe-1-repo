@@ -4,6 +4,10 @@ import android.widget.Button
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.action.ViewActions.swipeRight
+import androidx.test.espresso.matcher.ViewMatchers.withId
+import com.google.android.material.slider.Slider
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.textfield.TextInputEditText
 import de.dssax.loksteuerung.nfc.NfcText
@@ -154,6 +158,61 @@ class NfcConnectionTest {
             assertFalse(it.findViewById<MaterialSwitch>(R.id.freigabeSwitch).isEnabled)
         }
         assertNull(server.takeRequest(300, TimeUnit.MILLISECONDS))
+    }
+
+    @Test fun speedStopAndDirectionPreserveTheSameFullState() {
+        scan(listOf("Gisela"))
+        assertTrue(opened.await(5, TimeUnit.SECONDS))
+        serverSocket!!.send(state)
+        waitForReady()
+        scenario.onActivity {
+            it.findViewById<MaterialSwitch>(R.id.freigabeSwitch).isChecked = true
+        }
+        onView(withId(R.id.speedSlider)).perform(swipeRight())
+        val moving = JSONObject(messages.poll(5, TimeUnit.SECONDS) ?: error("No speed command"))
+        assertTrue(moving.getInt("speed") > 0)
+        assertEquals("gisela-live-id", moving.getString("id"))
+        assertEquals(11, moving.length())
+        assertTrue(moving.isNull("smoking"))
+        scenario.onActivity {
+            assertFalse(it.findViewById<Button>(R.id.btnBackward).isEnabled)
+            it.findViewById<Button>(R.id.stopButton).performClick()
+            assertEquals(0f, it.findViewById<Slider>(R.id.speedSlider).value)
+        }
+        val stopped = JSONObject(messages.poll(5, TimeUnit.SECONDS) ?: error("No stop command"))
+        assertEquals(0, stopped.getInt("speed"))
+        assertEquals(11, stopped.length())
+        // Wait for the server's state to settle before the next action.
+        Thread.sleep(500)
+        scenario.onActivity {
+            assertTrue(it.findViewById<Button>(R.id.btnBackward).isEnabled)
+            it.findViewById<Button>(R.id.btnBackward).performClick()
+        }
+        val reversed = JSONObject(messages.poll(5, TimeUnit.SECONDS) ?: error("No direction command"))
+        assertEquals(1, reversed.getInt("direction"))
+        assertEquals(0, reversed.getInt("speed"))
+        assertEquals("gisela-live-id", reversed.getString("id"))
+        assertEquals(11, reversed.length())
+    }
+
+    @Test fun unsolicitedServerStateUpdatesUiWithoutSendingACommand() {
+        scan(listOf("Gisela"))
+        assertTrue(opened.await(5, TimeUnit.SECONDS))
+        serverSocket!!.send(state)
+        waitForReady()
+        val updated = JSONObject(state).put("speed", 37).put("headLight", true)
+        serverSocket!!.send(updated.toString())
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        var displayed = false
+        while (!displayed && System.nanoTime() < deadline) {
+            scenario.onActivity {
+                displayed = it.findViewById<Slider>(R.id.speedSlider).value == 37f &&
+                    it.findViewById<MaterialSwitch>(R.id.headLightSwitch).isChecked
+            }
+            if (!displayed) Thread.sleep(50)
+        }
+        assertTrue("Server state was not displayed", displayed)
+        assertNull(messages.poll(600, TimeUnit.MILLISECONDS))
     }
 
     @Test fun repeatedTextDoesNotReconnectOrResetDrivingRelease() {
