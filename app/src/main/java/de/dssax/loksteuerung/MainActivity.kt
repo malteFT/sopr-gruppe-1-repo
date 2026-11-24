@@ -17,75 +17,43 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.slider.Slider
 import de.dssax.loksteuerung.databinding.ActivityMainBinding
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.Response
-import okhttp3.WebSocket
-import okhttp3.WebSocketListener
-import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
 
     private lateinit var binding: ActivityMainBinding
 
-    private val httpClient = OkHttpClient.Builder()
-        .pingInterval(20, TimeUnit.SECONDS)
-        .build()
-
-    private var webSocket: WebSocket? = null
-    private var state: JSONObject? = null
     private var nfcAdapter: NfcAdapter? = null
     private var readingNfc = false
     private var connectedUrl: String? = null
     private var lastNfcText: String? = null
     private var lastNfcAt = 0L
     private var updatingUi = false
-    private var lastSendAt = 0L
 
     private val uiHandler = Handler(Looper.getMainLooper())
-    private var pendingSend: Runnable? = null
+    private val communication = LokKommunikation(uiHandler)
+    private val steuerung = LokSteuerung(LokZustand(), communication, uiHandler)
+
     private val logLines = ArrayDeque<String>()
     private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.GERMANY)
-
-    private val listener = object : WebSocketListener() {
-
-        override fun onOpen(webSocket: WebSocket, response: Response) {
-            runOnUiThread {
-                if (this@MainActivity.webSocket !== webSocket) return@runOnUiThread
-                log("→ Verbunden")
-                binding.statusText.text = getString(R.string.status_waiting)
-                refreshControls()
-            }
-        }
-
-        override fun onMessage(webSocket: WebSocket, text: String) {
-            runOnUiThread { if (this@MainActivity.webSocket === webSocket) onServerMessage(text) }
-        }
-
-        override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-            runOnUiThread { log("… Server schließt Verbindung ($code $reason)") }
-        }
-
-        override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-            val detail = if (reason.isNotBlank()) ": $reason" else ""
-            runOnUiThread { onDisconnected(webSocket, "Verbindung geschlossen (Code $code$detail)") }
-        }
-
-        override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-            runOnUiThread {
-                onDisconnected(webSocket, "Fehler: ${t.message ?: t.javaClass.simpleName}")
-            }
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // Rückmeldungen werden auf dem UI-Thread zugestellt.
+        steuerung.onLog = ::log
+        steuerung.onState = ::onServerState
+        communication.onLog = ::log
+        communication.onOpen = {
+            log("→ Verbunden")
+            binding.statusText.text = getString(R.string.status_waiting)
+            refreshControls()
+        }
+        communication.onDisconnected = ::onDisconnected
 
         binding.urlEdit.setText(R.string.default_url)
         nfcAdapter = NfcAdapter.getDefaultAdapter(this)
@@ -102,19 +70,11 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
         }
 
         binding.connectButton.setOnClickListener {
-            if (webSocket != null) disconnect() else connect()
+            if (communication.hasConnection) disconnect() else connect()
         }
 
         binding.freigabeSwitch.setOnCheckedChangeListener { _, checked ->
-            if (!checked) {
-                val s = state
-                if (s != null && s.optInt("speed", 0) > 0) {
-                    s.put("speed", 0)
-                    setSliderValue(0)
-                    log("Freigabe entzogen → Geschwindigkeit auf 0")
-                    scheduleSend(0L)
-                }
-            }
+            if (!checked && steuerung.revokeDrivingRelease()) setSliderValue(0)
             refreshControls()
         }
 
@@ -122,9 +82,7 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
             val speed = value.toInt()
             binding.speedLabel.text = getString(R.string.speed_value, speed)
             if (!fromUser || updatingUi) return@addOnChangeListener
-            state?.put("speed", speed)
-            log("Geschwindigkeit → $speed")
-            scheduleSend(SEND_DEBOUNCE_MS)
+            steuerung.setSpeed(speed)
         }
 
         binding.speedSlider.addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
@@ -132,8 +90,7 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
 
             override fun onStopTrackingTouch(slider: Slider) {
                 if (updatingUi) return
-                state?.put("speed", slider.value.toInt())
-                scheduleSend(0L)
+                steuerung.finishSpeedChange(slider.value.toInt())
             }
         })
 
@@ -141,9 +98,7 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
             if (!isChecked || updatingUi) return@addOnButtonCheckedListener
             if (!binding.freigabeSwitch.isChecked) return@addOnButtonCheckedListener
             val direction = if (checkedId == R.id.btnBackward) DIRECTION_BACKWARD else DIRECTION_FORWARD
-            state?.put("direction", direction)
-            log("Richtung → ${if (direction == DIRECTION_BACKWARD) "rückwärts" else "vorwärts"}")
-            scheduleSend(0L)
+            steuerung.setDirection(direction)
         }
 
         bindFeatureSwitch(binding.headLightSwitch, "headLight", "Fahrlicht")
@@ -153,15 +108,7 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
         bindFeatureSwitch(binding.smokingSwitch, "smoking", "Rauch")
 
         binding.stopButton.setOnClickListener {
-            val s = state
-            if (s == null) {
-                log("STOP: noch kein Zustand geladen – nichts gesendet")
-                return@setOnClickListener
-            }
-            s.put("speed", 0)
-            setSliderValue(0)
-            log("NOT-STOP → Geschwindigkeit auf 0")
-            scheduleSend(0L)
+            if (steuerung.stop()) setSliderValue(0)
         }
 
         binding.speedLabel.text = getString(R.string.speed_zero)
@@ -242,7 +189,7 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
         lastNfcText = name
         lastNfcAt = now
         binding.nfcStatusText.text = getString(R.string.nfc_selected, name, url)
-        if (connectedUrl == url && webSocket != null) return
+        if (connectedUrl == url && communication.hasConnection) return
         disconnect()
         binding.urlEdit.setText(url)
         log("NFC-Text '$name' → $url")
@@ -257,23 +204,16 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
     }
 
     override fun onDestroy() {
-        pendingSend?.let { uiHandler.removeCallbacks(it) }
-        pendingSend = null
-        webSocket?.cancel()
-        webSocket = null
-        httpClient.dispatcher.executorService.shutdown()
-        httpClient.connectionPool.evictAll()
+        steuerung.close()
+        communication.close()
+        uiHandler.removeCallbacksAndMessages(null)
         super.onDestroy()
     }
 
     private fun bindFeatureSwitch(sw: MaterialSwitch, key: String, label: String) {
         sw.setOnCheckedChangeListener { _, checked ->
             if (updatingUi) return@setOnCheckedChangeListener
-            val s = state
-            if (s == null || !hasFeature(s, key)) return@setOnCheckedChangeListener
-            s.put(key, checked)
-            log("$label → ${if (checked) "ein" else "aus"}")
-            scheduleSend(0L)
+            steuerung.setFeature(key, checked, label)
         }
     }
 
@@ -283,8 +223,9 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
             log("Bitte eine ws://- oder wss://-URL angeben")
             return
         }
-        val request = try {
-            Request.Builder().url(url).build()
+        try {
+            // Einrichtung bleibt ein direkter Zugang zur Kommunikationskomponente.
+            communication.connect(url)
         } catch (e: IllegalArgumentException) {
             log("Ungültige URL: $url")
             return
@@ -293,10 +234,9 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
         binding.connectButton.isEnabled = false
         log("→ Verbinde mit $url …")
         connectedUrl = url
-        webSocket = httpClient.newWebSocket(request, listener)
-        val connectingSocket = webSocket
+        val connectingSocket = communication.connectionToken
         uiHandler.postDelayed({
-            if (webSocket === connectingSocket) {
+            if (communication.connectionToken === connectingSocket) {
                 binding.connectButton.isEnabled = true
                 refreshControls()
             }
@@ -304,16 +244,8 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
     }
 
     private fun disconnect() {
-        pendingSend?.let { uiHandler.removeCallbacks(it) }
-        pendingSend = null
-        // Cancel delayed commands and stop the old locomotive before a tag can select another.
-        state?.takeIf { it.optInt("speed", 0) > 0 }?.let {
-            it.put("speed", 0)
-            doSend()
-        }
-        webSocket?.close(1000, "App getrennt")
-        webSocket = null
-        state = null
+        steuerung.beforeDisconnect()
+        communication.disconnect()
         connectedUrl = null
         binding.connectButton.isEnabled = true
         binding.freigabeSwitch.isChecked = false
@@ -322,56 +254,37 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
         refreshControls()
     }
 
-    private fun onDisconnected(ws: WebSocket, reason: String) {
+    private fun onDisconnected(reason: String) {
         log("… $reason")
-        if (webSocket === ws) {
-            webSocket = null
-            state = null
-            connectedUrl = null
-            pendingSend?.let { uiHandler.removeCallbacks(it) }
-            pendingSend = null
-            binding.connectButton.isEnabled = true
-            binding.freigabeSwitch.isChecked = false
-            binding.statusText.text = getString(R.string.status_disconnected)
-        }
+        steuerung.connectionLost()
+        connectedUrl = null
+        binding.connectButton.isEnabled = true
+        binding.freigabeSwitch.isChecked = false
+        binding.statusText.text = getString(R.string.status_disconnected)
         refreshControls()
     }
 
-    private fun onServerMessage(text: String) {
-        val json = try {
-            JSONObject(text)
-        } catch (e: Exception) {
-            log("← (kein JSON) $text")
-            return
-        }
-        if (!json.has("id")) {
-            log("← $text")
-            return
-        }
-        state = json
-        log("← $text")
-        val label = json.optString("name").ifBlank { json.optString("id") }
-        binding.statusText.text = getString(R.string.status_connected, label)
-        updateUiFromState()
+    private fun onServerState(state: LokAnzeige) {
+        binding.statusText.text = getString(R.string.status_connected, state.label)
+        updateUiFromState(state)
         refreshControls()
     }
 
-    private fun updateUiFromState() {
-        val s = state ?: return
+    private fun updateUiFromState(s: LokAnzeige) {
         updatingUi = true
         try {
-            binding.idText.text = getString(R.string.id_value, s.optString("id", "–"))
+            binding.idText.text = getString(R.string.id_value, s.id)
             binding.infoText.text = getString(
                 R.string.info_value,
-                s.optString("name", "?"),
-                s.optString("number", "?"),
-                s.optInt("position", 0)
+                s.name,
+                s.number,
+                s.position
             )
-            val speed = s.optInt("speed", 0)
+            val speed = s.speed
             setSliderValue(speed)
             binding.speedLabel.text = getString(R.string.speed_value, speed)
             binding.directionToggle.check(
-                if (s.optInt("direction", 0) == DIRECTION_BACKWARD) R.id.btnBackward else R.id.btnForward
+                if (s.direction == DIRECTION_BACKWARD) R.id.btnBackward else R.id.btnForward
             )
             updateFeatureSwitch(binding.headLightSwitch, s, "headLight")
             updateFeatureSwitch(binding.cabinLightSwitch, s, "cabineLighting")
@@ -383,8 +296,8 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
         }
     }
 
-    private fun updateFeatureSwitch(sw: MaterialSwitch, s: JSONObject, key: String) {
-        sw.isChecked = hasFeature(s, key) && s.optBoolean(key, false)
+    private fun updateFeatureSwitch(sw: MaterialSwitch, s: LokAnzeige, key: String) {
+        sw.isChecked = s.features[key] ?: false
     }
 
     private fun setSliderValue(speed: Int) {
@@ -395,14 +308,14 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
     }
 
     private fun refreshControls() {
-        val s = state
-        val ready = webSocket != null && s != null
+        val s = steuerung.displayState
+        val ready = communication.hasConnection && s != null
         binding.connectButton.text =
-            getString(if (webSocket != null) R.string.disconnect else R.string.connect)
+            getString(if (communication.hasConnection) R.string.disconnect else R.string.connect)
 
         binding.freigabeSwitch.isEnabled = ready
         val motionAllowed = ready && binding.freigabeSwitch.isChecked
-        val stopped = (s?.optInt("speed", 0) ?: 0) == 0
+        val stopped = (s?.speed ?: 0) == 0
         val directionAllowed = motionAllowed && stopped
 
         binding.speedSlider.isEnabled = motionAllowed
@@ -417,29 +330,8 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
         binding.smokingSwitch.isEnabled = ready && hasFeature(s, "smoking")
     }
 
-    private fun hasFeature(s: JSONObject?, key: String): Boolean =
-        s != null && s.has(key) && !s.isNull(key)
-
-    private fun scheduleSend(delayMs: Long) {
-        pendingSend?.let { uiHandler.removeCallbacks(it) }
-        val remainingGap = lastSendAt + MIN_SEND_GAP_MS - System.currentTimeMillis()
-        val delay = maxOf(delayMs, if (remainingGap > 0) remainingGap else 0L)
-        val runnable = Runnable {
-            pendingSend = null
-            doSend()
-        }
-        pendingSend = runnable
-        uiHandler.postDelayed(runnable, delay)
-    }
-
-    private fun doSend() {
-        val ws = webSocket ?: return
-        val s = state ?: return
-        val payload = s.toString()
-        lastSendAt = System.currentTimeMillis()
-        val ok = ws.send(payload)
-        log((if (ok) "→ " else "→ FEHLGESCHLAGEN: ") + payload)
-    }
+    private fun hasFeature(s: LokAnzeige?, key: String): Boolean =
+        s?.features?.get(key) != null
 
     private fun log(line: String) {
         logLines.addLast("[${timeFormat.format(Date())}] $line")
@@ -455,7 +347,5 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
         private const val SPEED_MAX = 255
         private const val DIRECTION_FORWARD = 0
         private const val DIRECTION_BACKWARD = 1
-        private const val SEND_DEBOUNCE_MS = 700L
-        private const val MIN_SEND_GAP_MS = 400L
     }
 }
